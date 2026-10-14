@@ -1,0 +1,118 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-drift"
+version = "0.1.0"
+description = "Runtime intent-integrity gateway for MCP agents: task-scoped tool policy, deny-before-execution, replayable decision receipts."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "The Agent Drift Authors" }]
+keywords = ["mcp", "ai-security", "prompt-injection", "agent", "policy", "gateway"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+]
+
+# Pinned exactly. These are the versions actually installed and tested on 2026-10-14;
+# see docs/VERIFICATION.md for the observed environment.
+dependencies = [
+  "mcp==2.2.0",
+  "pydantic==2.13.5",
+  "starlette==1.6.0",
+  "sse-starlette==3.4.11",
+  "uvicorn==0.53.0",
+  "python-multipart==0.0.32",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==9.1.1",
+  "httpx==0.28.1",
+  "ruff==0.16.8",
+  "mypy==2.3.1",
+  "playwright==1.56.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/agent-drift"
+Documentation = "https://github.com/your-org/agent-drift/tree/main/docs"
+
+[project.scripts]
+agent-drift = "agent_drift.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "packages" }
+
+[tool.setuptools.packages.find]
+where = ["packages"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["packages", "apps", "tests", "evals", "scripts", "examples"]
+extend-exclude = [".venv", "var", "apps/dashboard/dist", ".wheelhouse"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF", "S", "PTH", "RET", "ARG"]
+ignore = [
+  "E501",    # line length handled by the formatter
+  "S101",    # asserts are used deliberately in tests and as internal invariants
+  "RUF012",  # ClassVar annotations not required on pydantic model config
+  "B008",    # Starlette/pydantic patterns use calls in defaults
+  "A003",    # shadowing builtins as model field names (e.g. "id") is intentional
+  # `PolicyViolation` and `StoreUnavailable` read correctly at their call sites; an
+  # "...Error" suffix would make `except StoreUnavailableError` worse, not better.
+  "N818",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "ARG", "SIM117", "PTH", "B011"]
+# Starlette request handlers must accept `request` whether or not they read it.
+"apps/api/main.py" = ["ARG001"]
+# These files deliberately contain homograph characters (a Cyrillic "а" that looks like a
+# Latin "a"). That IS the test data and the hazard being documented: flagging it as an
+# ambiguous character would mean deleting the thing under test.
+"packages/agent_drift/destinations.py" = ["RUF001", "RUF002", "RUF003"]
+"packages/agent_drift/policy.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/security/test_destinations.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/security/test_review_findings.py" = ["RUF001", "RUF002", "RUF003"]
+"evals/**" = ["S", "ARG", "PTH"]
+"scripts/**" = ["S", "PTH", "ARG"]
+"examples/**" = ["S", "PTH", "ARG"]
+
+[tool.mypy]
+python_version = "3.13"
+mypy_path = "packages"
+packages = ["agent_drift"]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+strict_equality = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["mcp.*", "sse_starlette.*", "starlette.*", "uvicorn.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["packages", "."]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+  "integration: spawns real MCP stdio processes",
+  "security: adversarial regression test",
+  "e2e: drives a real browser against a running server",
+  "slow: takes more than a couple of seconds",
+]
+filterwarnings = ["error::DeprecationWarning:agent_drift.*"]

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Agent Drift</title>
+    <meta
+      name="description"
+      content="Runtime intent integrity for MCP agents: task-scoped tool policy, deny before execution, replayable decision receipts."
+    />
+    <link rel="stylesheet" href="/assets/styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231d4ed8'/%3E%3Cpath d='M9 21V11h3.4a5 5 0 0 1 0 10H9Zm3.2-2.1a2.9 2.9 0 0 0 0-5.8h-1.1v5.8h1.1ZM19 21l3.6-10h2.2l-3.6 10H19Z' fill='%23fff'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <div id="root">
+      <div class="boot" role="status" aria-live="polite">Loading Agent Drift&hellip;</div>
+    </div>
+    <noscript>
+      <div class="boot">
+        The Agent Drift dashboard requires JavaScript. The API itself does not: see
+        <a href="/docs">/docs</a> and <a href="/healthz">/healthz</a>.
+      </div>
+    </noscript>
+    <script type="module" src="/assets/app.js"></script>
+  </body>
+</html>

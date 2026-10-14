@@ -1,0 +1,64 @@
+# Local development only.
+#
+# `docker compose up` on localhost is NOT a secure hosted deployment. Both services are
+# published on 127.0.0.1 so nothing is reachable from the network, and the admin token still
+# protects every mutating request. See the deployment warning in README.md.
+
+name: agent-drift
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: agent-drift-api:dev
+    command: ["api", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      AD_API_PORT: "8001"
+      AD_WEB_PORT: "5173"
+      AD_DB_PATH: /app/var/agent_drift.db
+      AD_FIXTURE_STATE: /app/var/fixture
+      AD_SANDBOX_ROOT: /app/var/fixture/workspace
+      AD_LOG_LEVEL: INFO
+      # Required for every mutating request. Generate with:
+      #   python -c "import secrets; print(secrets.token_urlsafe(32))"
+      # Unset, the API fails closed on mutations rather than allowing them.
+      AD_ADMIN_TOKEN: ${AD_ADMIN_TOKEN:?set AD_ADMIN_TOKEN in your environment or .env}
+      AD_AUDIT_HMAC_KEY: ${AD_AUDIT_HMAC_KEY:-}
+      AD_CORS_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
+    ports:
+      # Loopback only. Changing this to 8001:8001 would publish the control plane on every
+      # interface, which the security model does not support.
+      - "127.0.0.1:8001:8001"
+    volumes:
+      - agent-drift-state:/app/var
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/healthz', timeout=4).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    image: agent-drift-dashboard:dev
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5173:5173"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+
+volumes:
+  agent-drift-state:

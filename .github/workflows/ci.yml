@@ -1,0 +1,319 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONPATH: ${{ github.workspace }}/packages:${{ github.workspace }}
+  AD_FIXTURE_STATE: ${{ github.workspace }}/var/fixture
+  AD_SANDBOX_ROOT: ${{ github.workspace }}/var/fixture/workspace
+  # Tests opt out of bearer auth explicitly rather than by omission; see
+  # tests/security/test_redaction_and_api_auth.py, which covers both modes.
+  AD_DISABLE_AUTH: "1"
+
+jobs:
+  backend:
+    name: Backend — lint, typecheck, unit, security, integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install pinned dependencies
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python \
+            mcp==2.2.0 pydantic==2.13.5 starlette==1.6.0 sse-starlette==3.4.11 \
+            uvicorn==0.53.0 python-multipart==0.0.32 \
+            pytest==9.1.1 httpx==0.28.1 ruff==0.16.8 mypy==2.3.1
+          uv pip install --python .venv/bin/python -e . --no-deps
+
+      - name: Confirm the pinned MCP protocol revision
+        run: |
+          .venv/bin/python - <<'PY'
+          import mcp.types.version as v
+          from agent_drift import MCP_PROTOCOL_REVISION, MCP_SDK_VERSION
+          assert v.LATEST_PROTOCOL_VERSION == MCP_PROTOCOL_REVISION, (
+              f"SDK reports {v.LATEST_PROTOCOL_VERSION}, project pins {MCP_PROTOCOL_REVISION}"
+          )
+          print(f"MCP SDK {MCP_SDK_VERSION}, protocol {MCP_PROTOCOL_REVISION}")
+          PY
+
+      - name: Lint
+        run: .venv/bin/ruff check packages apps tests evals scripts examples
+
+      - name: Format check
+        run: .venv/bin/ruff format --check packages apps tests evals scripts examples
+
+      - name: Typecheck
+        run: .venv/bin/mypy --config-file pyproject.toml
+
+      - name: Unit tests
+        run: .venv/bin/pytest tests/unit -q
+
+      - name: Security regression tests
+        run: .venv/bin/pytest tests/security -q
+
+      # Spawns real MCP stdio processes: host -> gateway -> upstream fixture.
+      - name: Integration tests (real MCP processes)
+        run: .venv/bin/pytest tests/integration -q
+
+      - name: Real stdio smoke check
+        run: .venv/bin/python -m agent_drift.cli smoke --db var/ci-smoke.db
+
+      - name: Fail the build on skipped mandatory tests
+        run: |
+          .venv/bin/pytest tests/unit tests/security tests/integration \
+            -q --no-header -rs 2>&1 | tee /tmp/pytest-report.txt
+          # Only the documented loopback-resolution skip is tolerated. Any other skip in a
+          # mandatory suite is a silent gap and fails the build.
+          if grep -E "^SKIPPED" /tmp/pytest-report.txt \
+             | grep -v "resolves its own name to loopback"; then
+            echo "::error::an undocumented mandatory test was skipped"
+            exit 1
+          fi
+
+      - name: Upload backend artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-artifacts
+          path: |
+            /tmp/pytest-report.txt
+            var/*.db
+          retention-days: 7
+
+  frontend:
+    name: Frontend — typecheck and production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # No npm cache key is configured: a lockfile could not be generated in the
+      # authoring environment (the npm registry was blocked), so `npm ci` falls back to
+      # `npm install` against the pinned versions in package.json. Generate and commit
+      # apps/dashboard/package-lock.json from a machine with registry access, then add
+      # `cache: npm` here.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dashboard dependencies
+        working-directory: apps/dashboard
+        run: npm ci || npm install --no-audit --no-fund
+
+      - name: Typecheck
+        working-directory: apps/dashboard
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Production build
+        working-directory: apps/dashboard
+        run: node build.mjs
+
+      - name: Assert the bundle is real
+        working-directory: apps/dashboard
+        run: |
+          test -f dist/app.js || { echo "::error::no bundle produced"; exit 1; }
+          test -f dist/index.html || { echo "::error::no index.html"; exit 1; }
+          size=$(stat -c%s dist/app.js)
+          echo "bundle size: ${size} bytes"
+          # A React application that bundles to under 50 kB means the build silently failed.
+          test "${size}" -gt 50000 || { echo "::error::bundle is implausibly small"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-dist
+          path: apps/dashboard/dist
+          retention-days: 7
+
+  e2e:
+    name: End-to-end — real browser against the real backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.13
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python \
+            mcp==2.2.0 pydantic==2.13.5 starlette==1.6.0 sse-starlette==3.4.11 \
+            uvicorn==0.53.0 python-multipart==0.0.32 \
+            pytest==9.1.1 httpx==0.28.1 playwright==1.56.0
+          uv pip install --python .venv/bin/python -e . --no-deps
+          .venv/bin/playwright install --with-deps chromium
+
+      - name: Build the dashboard
+        working-directory: apps/dashboard
+        run: |
+          npm ci || npm install --no-audit --no-fund
+          node build.mjs
+
+      # Drives a real headless Chromium against a real uvicorn server over data produced by
+      # actually running the scenarios through a real gateway.
+      - name: Playwright end-to-end suite
+        run: .venv/bin/pytest tests/e2e -q
+
+      - name: Upload captured screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: var/screenshots
+          retention-days: 14
+
+  eval:
+    name: Benchmark — dataset size gate and measured results
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.13
+
+      - name: Install dependencies
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python \
+            mcp==2.2.0 pydantic==2.13.5 starlette==1.6.0 sse-starlette==3.4.11 uvicorn==0.53.0
+          uv pip install --python .venv/bin/python -e . --no-deps
+
+      # Exits non-zero if any pre-registered target is missed, so a regression in protection
+      # or a new false block fails the build rather than quietly changing a number.
+      - name: Run the benchmark
+        run: .venv/bin/python evals/run_eval.py --out evals
+
+      - name: Dataset size and balance gate
+        run: |
+          .venv/bin/python - <<'PY'
+          import json, pathlib, sys
+          report = json.loads(pathlib.Path("evals/RESULTS.json").read_text())
+          data = report["dataset"]
+          problems = []
+          if data["total_cases"] < 120:
+              problems.append(f"only {data['total_cases']} cases; the gate is 120")
+          if data["held_out_cases"] < 20:
+              problems.append(f"only {data['held_out_cases']} held-out cases")
+          minority = min(data["benign"], data["adversarial"])
+          if minority / data["total_cases"] < 0.3:
+              problems.append(
+                  f"unbalanced: {data['benign']} benign vs {data['adversarial']} adversarial"
+              )
+          if not report["all_targets_met"]:
+              failed = [c["check"] for c in report["target_checks"] if not c["passed"]]
+              problems.append(f"targets missed: {', '.join(failed)}")
+          if problems:
+              print("::error::" + "; ".join(problems))
+              sys.exit(1)
+          print(f"benchmark gate passed: {data['total_cases']} cases, "
+                f"{data['held_out_cases']} held out, all targets met")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: |
+            evals/RESULTS.json
+            evals/RESULTS.md
+            evals/cases.json
+          retention-days: 30
+
+  images:
+    name: Docker images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      # Not built in the authoring environment: the container registry was unreachable
+      # there, so this job is the first place the images are actually built. See
+      # docs/DECISIONS.md D-008 and docs/ACCEPTANCE_STATUS.md AD-23.
+      - name: Build the API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.api
+          push: false
+          tags: agent-drift-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build the dashboard image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.dashboard
+          push: false
+          tags: agent-drift-dashboard:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Validate the compose file
+        run: docker compose -f compose.yaml config >/dev/null && echo "compose.yaml is valid"
+
+  secrets:
+    name: Hygiene — no private material committed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: private/ must be ignored and empty in git
+        run: |
+          mkdir -p private
+          printf 'placeholder\n' > private/probe.pdf
+          if ! git check-ignore -q private/probe.pdf; then
+            echo "::error::private/ is not gitignored"
+            exit 1
+          fi
+          tracked=$(git ls-files private/ | wc -l)
+          if [ "${tracked}" -ne 0 ]; then
+            echo "::error::${tracked} file(s) under private/ are tracked by git"
+            git ls-files private/
+            exit 1
+          fi
+          echo "private/ is ignored and holds no tracked files"
+
+      - name: No .env or database committed
+        run: |
+          leaked=$(git ls-files | grep -E '(^|/)\.env$|\.db$|\.sqlite3?$' || true)
+          if [ -n "${leaked}" ]; then
+            echo "::error::secrets or local state are tracked: ${leaked}"
+            exit 1
+          fi
+          echo "no .env or database files are tracked"
+
+      - name: README assets exist
+        run: |
+          for asset in dashboard-overview.png blocked-action.png replay-lab.png architecture.svg; do
+            test -s "docs/assets/${asset}" || { echo "::error::missing docs/assets/${asset}"; exit 1; }
+          done
+          echo "all README assets are present and non-empty"

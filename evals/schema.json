@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/your-org/agent-drift/evals/schema.json",
+  "title": "Agent Drift evaluation case and result schema",
+  "description": "Label schema for the offline benchmark. A case is one proposed tool call against one approved contract, with a ground-truth label derived from that contract rather than from any model's opinion.",
+  "type": "object",
+  "required": ["schema_version", "cases"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "cases": {
+      "type": "array",
+      "minItems": 100,
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": ["id", "family", "category", "contract", "tool", "args", "label", "rationale"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^AD-EVAL-[0-9]{4}$" },
+        "family": {
+          "type": "string",
+          "description": "The behaviour family this case belongs to. Used for per-family breakdowns and for the held-out split.",
+          "enum": [
+            "legitimate_read",
+            "legitimate_list",
+            "legitimate_scoped_write",
+            "legitimate_approved_egress",
+            "benign_alarming_text",
+            "readonly_write_attempt",
+            "readonly_delete_attempt",
+            "exfiltration_attempt",
+            "scope_escape",
+            "path_traversal",
+            "budget_exhaustion",
+            "missing_contract",
+            "expired_contract",
+            "task_spoof",
+            "destination_variant",
+            "private_address_egress",
+            "unknown_tool",
+            "schema_violation",
+            "argument_smuggling",
+            "unicode_confusable"
+          ]
+        },
+        "category": { "type": "string", "enum": ["benign", "adversarial"] },
+        "held_out": {
+          "type": "boolean",
+          "default": false,
+          "description": "True for families deliberately excluded while the rules were written, used to estimate generalization rather than fit."
+        },
+        "contract": {
+          "type": ["string", "null"],
+          "description": "Name of the seed contract this case is evaluated against. Null means no contract is registered."
+        },
+        "tool": { "type": "string" },
+        "args": { "type": "object" },
+        "setup": {
+          "type": "object",
+          "description": "Deterministic preconditions applied before evaluation.",
+          "additionalProperties": true
+        },
+        "label": {
+          "type": "string",
+          "enum": ["should_allow", "should_block"],
+          "description": "Ground truth, derived from the approved contract's text. 'should_block' includes calls that must pause for human review, since those are not permitted to execute unattended."
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 10,
+          "description": "Why the label is what it is, in terms of the contract. A case whose rationale cannot be written in one sentence is a case with an unclear ground truth and does not belong in the set."
+        },
+        "rephrasing_of": {
+          "type": ["string", "null"],
+          "description": "Id of the case this is a randomized rephrasing of, when applicable."
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": ["case_id", "arm", "decision", "correct", "elapsed_ms"],
+      "properties": {
+        "case_id": { "type": "string" },
+        "arm": { "type": "string", "enum": ["unguarded_passthrough", "keyword_classifier", "contract_policy"] },
+        "decision": { "type": "string", "enum": ["allow", "deny", "needs_approval", "error"] },
+        "blocked": { "type": "boolean" },
+        "correct": { "type": "boolean" },
+        "reason_codes": { "type": "array", "items": { "type": "string" } },
+        "elapsed_ms": { "type": "number" }
+      }
+    }
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "$comment": [
+    "MCP client/host configuration for Agent Drift.",
+    "Replace /ABSOLUTE/PATH/TO/agent-drift with the absolute path to your checkout.",
+    "",
+    "SECURITY: the --task-id value is the trust anchor. It is supplied here, by you, when",
+    "the gateway process is launched, and nothing the agent sends can change it. Register",
+    "the matching contract through the control plane BEFORE starting a session: an unknown",
+    "task fails closed and every call is denied with AD-E020.",
+    "",
+    "COVERAGE: only tool calls that traverse this gateway are enforced. Any server your",
+    "host talks to directly, and any non-MCP capability, is outside Agent Drift's view.",
+    "See docs/THREAT_MODEL.md section 5.2."
+  ],
+  "mcpServers": {
+    "agent-drift": {
+      "command": "/ABSOLUTE/PATH/TO/agent-drift/.venv/bin/python",
+      "args": [
+        "-m",
+        "agent_drift.cli",
+        "gateway",
+        "--task-id",
+        "demo-repo-review",
+        "--db",
+        "/ABSOLUTE/PATH/TO/agent-drift/var/agent_drift.db",
+        "--sandbox-root",
+        "/ABSOLUTE/PATH/TO/agent-drift/var/fixture/workspace",
+        "--approval-timeout",
+        "60",
+        "--log-level",
+        "INFO"
+      ],
+      "env": {
+        "PYTHONPATH": "/ABSOLUTE/PATH/TO/agent-drift/packages:/ABSOLUTE/PATH/TO/agent-drift",
+        "AD_FIXTURE_STATE": "/ABSOLUTE/PATH/TO/agent-drift/var/fixture"
+      }
+    },
+    "$comment_custom_upstream": [
+      "To guard your own MCP server instead of the bundled sandbox fixture, add",
+      "--upstream-command and one --upstream-arg per argument, and give the policy engine",
+      "a tool-to-operation mapping for your tools (see packages/agent_drift/policy.py,",
+      "DEFAULT_TOOL_SPECS). Operations are mapped by local configuration and never read",
+      "from a tool's own description or annotations."
+    ],
+    "agent-drift-custom-upstream": {
+      "command": "/ABSOLUTE/PATH/TO/agent-drift/.venv/bin/python",
+      "args": [
+        "-m",
+        "agent_drift.cli",
+        "gateway",
+        "--task-id",
+        "my-task",
+        "--upstream-command",
+        "/usr/bin/node",
+        "--upstream-arg",
+        "/ABSOLUTE/PATH/TO/your-mcp-server/dist/index.js",
+        "--upstream-name",
+        "my-server"
+      ],
+      "env": {
+        "PYTHONPATH": "/ABSOLUTE/PATH/TO/agent-drift/packages:/ABSOLUTE/PATH/TO/agent-drift"
+      }
+    }
+  }
+}

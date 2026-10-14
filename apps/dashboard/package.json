@@ -1,0 +1,22 @@
+{
+  "name": "agent-drift-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent Drift dashboard: intent versus action, live decision trace, approval inbox and replay lab.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "typescript": "6.0.3"
+  }
+}

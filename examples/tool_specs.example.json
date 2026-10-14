@@ -1,0 +1,42 @@
+{
+  "$comment": [
+    "Tool-to-operation map for guarding your own MCP server.",
+    "",
+    "Pass it with: agent-drift gateway --tool-specs examples/tool_specs.example.json",
+    "(or set AD_TOOL_SPECS).",
+    "",
+    "SECURITY: these operations are declared HERE, by you. They are never read from a",
+    "tool's own description or annotations, because those come from the server and the",
+    "server may be the adversary — MCP 2026-07-28 calls annotations untrusted hints, and",
+    "Microsoft's MCP guidance names tool poisoning and rug pulls explicitly.",
+    "",
+    "A tool absent from this file has operation 'unknown' and is DENIED. An incomplete",
+    "map fails closed, not open.",
+    "",
+    "Valid operations: read, list, write, delete, network_post, execute."
+  ],
+  "files.read": {
+    "operation": "read",
+    "resource_arg": "path",
+    "requires_resource": true
+  },
+  "files.list": {
+    "operation": "list",
+    "resource_arg": "path"
+  },
+  "files.write": {
+    "operation": "write",
+    "resource_arg": "path",
+    "requires_resource": true
+  },
+  "files.delete": {
+    "operation": "delete",
+    "resource_arg": "path",
+    "requires_resource": true
+  },
+  "http.post": {
+    "operation": "network_post",
+    "destination_arg": "url",
+    "requires_destination": true
+  }
+}

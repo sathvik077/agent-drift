@@ -1,0 +1,51 @@
+flowchart LR
+  subgraph trusted["Trust boundary: user-approved and locally configured"]
+    U["Trusted user"]
+    C["Intent contract<br/>task_id · tools · scopes<br/>destinations · budgets<br/>approval rules · hash"]
+    A["Review UI<br/>approval inbox"]
+    E["Policy evaluator<br/>R1 .. R11, fail closed"]
+    L[("SQLite WAL<br/>decisions · events<br/>approvals · budgets")]
+  end
+
+  subgraph untrusted["Untrusted: data, never authority"]
+    H["Agent / MCP host"]
+    X["Tool results, issue text,<br/>retrieved documents,<br/>tool descriptions and annotations"]
+  end
+
+  subgraph sandbox["Sandbox fixture"]
+    T["Upstream MCP server<br/>repo.read_file · list_files<br/>write_file · delete_file<br/>network.http_post"]
+    S["Simulated egress sink<br/>(no sockets)"]
+    K["Execution counters<br/>(the test oracle)"]
+  end
+
+  U -->|"approves, with admin token"| C
+  C --> E
+  H -->|"stdio tools/call"| P["Agent Drift gateway<br/>MCP server to the host<br/>MCP client to the upstream"]
+  P -->|"ToolAttempt<br/>task from launch binding"| E
+  X -.->|"read by the agent;<br/>cannot change the contract"| H
+
+  E -->|"ALLOW · budget reserved"| T
+  E -->|"DENY · isError result"| B["No upstream call"]
+  E -->|"NEEDS_APPROVAL"| A
+  A -->|"single-use grant<br/>bound to canonical args"| E
+
+  T --> K
+  T --> S
+  T -->|"result relayed"| P
+  P --> H
+
+  E ==>|"decision committed BEFORE forwarding"| L
+  L --> D["Dashboard<br/>intent vs action · live SSE<br/>approvals · Replay Lab"]
+  L --> R["Redacted audit export"]
+
+  classDef trustedBox fill:#e2f4f2,stroke:#0f766e,stroke-width:2px,color:#0b3b37
+  classDef untrustedBox fill:#fbeee2,stroke:#a4501b,stroke-width:2px,color:#5c2f10
+  classDef sandboxBox fill:#eef1f6,stroke:#5b6472,stroke-width:1px,color:#1f2937
+  classDef gateway fill:#e8edfd,stroke:#1d4ed8,stroke-width:2px,color:#10245c
+  classDef deny fill:#fceae8,stroke:#b3261e,stroke-width:2px,color:#5e130e
+
+  class U,C,A,E,L trustedBox
+  class H,X untrustedBox
+  class T,S,K sandboxBox
+  class P gateway
+  class B deny

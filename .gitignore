@@ -1,0 +1,63 @@
+# ---- personal / private reference material (NEVER commit) ----
+private/
+*.interview-notes.pdf
+*Interview_Guide.pdf
+*Research_Interview*.pdf
+
+# ---- secrets & environment ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+.ad_admin_token
+
+# ---- python ----
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ---- offline bootstrap artifacts ----
+.wheelhouse/
+vendor/node_modules/
+
+# ---- node ----
+node_modules/
+apps/dashboard/dist/
+.npm/
+
+# ---- local runtime state (databases, logs, sandboxes) ----
+var/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+logs/
+*.log
+.ad_run/
+sandbox-runtime/
+tmp-sandbox/
+
+# ---- test / eval outputs that are regenerated ----
+.playwright/
+test-results/
+playwright-report/
+
+# ---- editors / os ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

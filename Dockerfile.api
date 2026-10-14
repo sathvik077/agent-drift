@@ -1,0 +1,61 @@
+# Agent Drift control plane + MCP gateway.
+#
+# Not built in the environment where this project was authored: the container registry was
+# unreachable there (docs/DECISIONS.md D-008), so the first real build happens in CI. The
+# file is written to be correct and is validated by `docker compose config` and by the
+# `images` CI job rather than being claimed as tested locally.
+
+FROM python:3.13-slim AS base
+
+# Dependencies are pinned to the exact versions this project was tested against.
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Install dependencies in their own layer so source changes do not re-resolve them.
+COPY pyproject.toml ./
+RUN python -m pip install --no-cache-dir \
+      "mcp==2.2.0" \
+      "pydantic==2.13.5" \
+      "starlette==1.6.0" \
+      "sse-starlette==3.4.11" \
+      "uvicorn==0.53.0" \
+      "python-multipart==0.0.32"
+
+COPY packages/ ./packages/
+COPY apps/api/ ./apps/api/
+COPY examples/ ./examples/
+COPY README.md LICENSE NOTICE ./
+
+# The dashboard bundle is produced by Dockerfile.dashboard and mounted or copied in; the
+# API serves whatever is present at this path and returns a clear 503 when it is absent.
+RUN mkdir -p /app/apps/dashboard/dist /app/var
+
+RUN python -m pip install --no-cache-dir --no-deps -e .
+
+# Run as a non-root user. The sandbox fixture writes only under /app/var, which is the only
+# writable location this image needs.
+RUN useradd --create-home --uid 10001 agentdrift \
+ && chown -R agentdrift:agentdrift /app/var /app/apps/dashboard/dist
+USER agentdrift
+
+ENV PYTHONPATH=/app/packages:/app \
+    AD_API_PORT=8001 \
+    AD_DB_PATH=/app/var/agent_drift.db \
+    AD_FIXTURE_STATE=/app/var/fixture \
+    AD_SANDBOX_ROOT=/app/var/fixture/workspace \
+    AD_LOG_LEVEL=INFO
+
+# Bound to 0.0.0.0 inside the container only; compose publishes it on 127.0.0.1. Binding to
+# all interfaces *inside* a container is not the same as exposing it on the host, and the
+# compose file is what keeps it on loopback.
+EXPOSE 8001
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/healthz', timeout=4).status==200 else 1)"
+
+ENTRYPOINT ["python", "-m", "agent_drift.cli"]
+CMD ["api", "--host", "0.0.0.0", "--port", "8001"]

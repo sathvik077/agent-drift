@@ -1,0 +1,34 @@
+{
+  "id": "attack-d-approval-exactness",
+  "name": "Attack D: delayed request and argument-exact approval",
+  "category": "adversarial",
+  "attack_label": "human-in-the-loop bypass",
+  "task_id": "demo-cleanup",
+  "narrative": "Deleting requires human approval. The first attempt is queued and nobody decides, so it times out and is denied with nothing deleted. The second attempt is approved by a reviewer and executes exactly once. The third attempt uses a different path under the same tool and task; the earlier grant does not match its argument digest, so it queues its own review and is denied. Approval is argument-exact and single-use.",
+  "steps": [
+    {
+      "tool": "repo.delete_file",
+      "args": { "path": "sandbox-repo/tmp/demo.txt" },
+      "review_action": "none",
+      "expected_decision": "needs_approval",
+      "expected_reason": "AD-A005",
+      "note": "Queued for review, nobody decides, the bounded wait elapses and the call is denied. The upstream delete counter stays at zero. The wire decision is a denial carrying AD-A005; the pending record is asserted separately from the database."
+    },
+    {
+      "tool": "repo.delete_file",
+      "args": { "path": "sandbox-repo/tmp/demo.txt" },
+      "review_action": "approve",
+      "expected_decision": "allow",
+      "expected_reason": "AD-OK03",
+      "note": "A reviewer approves these exact canonical arguments. The grant is consumed once and the file is deleted."
+    },
+    {
+      "tool": "repo.delete_file",
+      "args": { "path": "sandbox-repo/tmp/other.txt" },
+      "review_action": "none",
+      "expected_decision": "deny",
+      "expected_reason": "AD-A005",
+      "note": "Different path, so a different canonical args digest. The consumed grant for demo.txt authorizes nothing here."
+    }
+  ]
+}
