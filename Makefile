@@ -32,6 +32,8 @@ export AD_SANDBOX_ROOT  ?= $(AD_FIXTURE_STATE)/workspace
 export PYTHONPATH := $(REPO_ROOT)/packages:$(REPO_ROOT)
 export NODE_PATH := $(NODE_MODULES):$(NODE_STORE)
 
+PYTHON_MIN := 3.12
+
 RUN_DEPS := mcp==2.2.0 pydantic==2.13.5 starlette==1.6.0 sse-starlette==3.4.11 uvicorn==0.53.0 python-multipart==0.0.32
 DEV_DEPS := pytest==9.1.1 httpx==0.28.1 ruff==0.16.8 mypy==2.3.1 setuptools==68.1.2
 
@@ -51,7 +53,20 @@ help: ## Show the available targets
 setup: ## Create the venv, install pinned deps, generate .env, init the database
 	@set -euo pipefail
 	mkdir -p var
-	if [ ! -x "$(PY)" ]; then uv venv .venv --system-site-packages; fi
+	if [ ! -x "$(PY)" ]; then
+	  # The project needs Python >= $(PYTHON_MIN). Ask uv for it explicitly rather than
+	  # inheriting whatever `python3` happens to be, which on many systems is older and
+	  # produces a confusing failure several steps later. uv downloads a standalone
+	  # interpreter if the host has none; if it cannot, we say so plainly and stop.
+	  if ! uv venv .venv --python $(PYTHON_MIN) --system-site-packages; then
+	    echo
+	    echo "ERROR: could not create a Python $(PYTHON_MIN) virtual environment."
+	    echo "       Agent Drift requires Python >= $(PYTHON_MIN) (found: $$(python3 --version 2>&1))."
+	    echo "       Install it, or let uv fetch one:  uv python install $(PYTHON_MIN)"
+	    exit 1
+	  fi
+	fi
+	echo "==> using $$($(PY) --version)"
 	echo "==> installing pinned Python dependencies"
 	if ! VIRTUAL_ENV=$(VENV) $(PIP) install -q $(RUN_DEPS) $(DEV_DEPS) 2>/dev/null; then
 	  echo "    registry unavailable; falling back to the local offline wheelhouse"
