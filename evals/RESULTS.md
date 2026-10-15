@@ -1,6 +1,6 @@
 # Agent Drift evaluation results
 
-**Generated** 2026-10-14T20:22:23Z · Agent Drift 0.1.0 · MCP SDK 2.2.0 (protocol 2026-07-28)
+**Generated** 2026-10-15T03:19:10Z · Agent Drift 0.1.0 · MCP SDK 2.2.0 (protocol 2026-07-28)
 
 **Environment** Python 3.13.16 on Linux-6.18.44-fc-v114-x86_64-with-glibc2.39 · fully offline · no language model used
 
@@ -51,16 +51,16 @@ A case's label comes from the text of the approved contract it is evaluated agai
 | Arm | Cases | TP | FP | TN | FN | Recall | Precision | FPR | Benign completion | Accuracy | p50 ms | p95 ms |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | `unguarded_passthrough` | 206 | 0 | 0 | 95 | 111 | 0.0% | n/a | 0.0% | 100.0% | 46.1% | 0.00 | 0.00 |
-| `keyword_classifier` | 206 | 108 | 53 | 42 | 3 | 97.3% | 67.1% | 55.8% | 44.2% | 72.8% | 0.03 | 0.04 |
-| `contract_policy` | 206 | 111 | 0 | 95 | 0 | 100.0% | 100.0% | 0.0% | 100.0% | 100.0% | 0.54 | 1.22 |
+| `keyword_classifier` | 206 | 108 | 53 | 42 | 3 | 97.3% | 67.1% | 55.8% | 44.2% | 72.8% | 0.03 | 0.06 |
+| `contract_policy` | 206 | 111 | 0 | 95 | 0 | 100.0% | 100.0% | 0.0% | 100.0% | 100.0% | 0.37 | 0.82 |
 
 ## Development families only
 
 | Arm | Cases | TP | FP | TN | FN | Recall | Precision | FPR | Benign completion | Accuracy | p50 ms | p95 ms |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | `unguarded_passthrough` | 158 | 0 | 0 | 82 | 76 | 0.0% | n/a | 0.0% | 100.0% | 51.9% | 0.00 | 0.00 |
-| `keyword_classifier` | 158 | 74 | 41 | 41 | 2 | 97.4% | 64.3% | 50.0% | 50.0% | 72.8% | 0.03 | 0.04 |
-| `contract_policy` | 158 | 76 | 0 | 82 | 0 | 100.0% | 100.0% | 0.0% | 100.0% | 100.0% | 0.62 | 1.23 |
+| `keyword_classifier` | 158 | 74 | 41 | 41 | 2 | 97.4% | 64.3% | 50.0% | 50.0% | 72.8% | 0.03 | 0.06 |
+| `contract_policy` | 158 | 76 | 0 | 82 | 0 | 100.0% | 100.0% | 0.0% | 100.0% | 100.0% | 0.61 | 0.82 |
 
 ## Held-out families only
 
@@ -68,7 +68,7 @@ A case's label comes from the text of the approved contract it is evaluated agai
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | `unguarded_passthrough` | 48 | 0 | 0 | 13 | 35 | 0.0% | n/a | 0.0% | 100.0% | 27.1% | 0.00 | 0.00 |
 | `keyword_classifier` | 48 | 34 | 12 | 1 | 1 | 97.1% | 73.9% | 92.3% | 7.7% | 72.9% | 0.03 | 0.05 |
-| `contract_policy` | 48 | 35 | 0 | 13 | 0 | 100.0% | 100.0% | 0.0% | 100.0% | 100.0% | 0.24 | 0.82 |
+| `contract_policy` | 48 | 35 | 0 | 13 | 0 | 100.0% | 100.0% | 0.0% | 100.0% | 100.0% | 0.20 | 0.78 |
 
 ## Targets
 
@@ -80,7 +80,7 @@ Targets are from `CLAUDE.md` section 8 and were fixed before the run. They are c
 | Precision | 100.00 | `>=` | 95.0 | PASS | TP=111 FP=0 |
 | Recall | 100.00 | `>=` | 95.0 | PASS | TP=111 FN=0 |
 | Benign false blocks | 0.00 | `<=` | 5.0 | PASS | FP=0 of 95 benign cases |
-| p95 decision latency (ms) | 1.22 | `<=` | 100.0 | PASS | policy evaluation only, excluding the upstream call |
+| p95 decision latency (ms) | 0.82 | `<=` | 100.0 | PASS | policy evaluation only, excluding the upstream call |
 
 **Overall: all targets met.**
 

@@ -2,10 +2,15 @@
 
 Status of every release gate in `CLAUDE.md` §8, from `ACCEPTANCE_EVIDENCE_MATRIX.md`.
 
-**Date:** 2026-10-14. **Environment:** Python 3.13.16, Node 22.22.0, Linux x86-64, fully
-offline. **Evidence:** `docs/VERIFICATION.md` (commands and exit codes),
-`var/verify-report.json` (machine-readable), `evals/RESULTS.md` (benchmark),
+**Date:** 2026-10-14; clean-machine setup run 2026-10-15. **Environment:** Python 3.13.16,
+Node 22.22.0, Linux x86-64, fully offline. **Evidence:** `docs/VERIFICATION.md` (commands and
+exit codes), `var/verify-report.json` (machine-readable), `evals/RESULTS.md` (benchmark),
 `docs/SECURITY_REVIEW.md` (independent review).
+
+`make verify` on 2026-10-14: **562 passed, 0 failed, 0 skipped**; 15 of 16 gates PASS,
+`docker` BLOCKED. AD-01 was additionally re-run on a **second, clean host** with live
+package registries — see `docs/VERIFICATION.md` §10, which also records the three real setup
+defects that run exposed and fixed.
 
 A gate is **PASS** only on directly observed evidence. A gate that could not run here is
 **NOT VERIFIED** with the reason and the exact retry command — not a pass.
@@ -40,6 +45,13 @@ Every other gate passes with observed evidence. On a machine with registry acces
 - **Zero cloud credentials:** no model API key is read anywhere. `tests/conftest.py` installs
   a socket guard that fails any test attempting a non-loopback connection, so this is
   enforced rather than asserted.
+- **Re-verified on a clean host (2026-10-15):** `make setup` then `make smoke` on a different
+  Linux x86-64 machine with live PyPI and npm, no offline wheelhouse, no preinstalled Node
+  toolchain and a default `python3` of 3.10.12. `make setup` fetched a standalone 3.13.15,
+  installed from the real registries, seeded five contracts, and `make smoke` reported
+  `SMOKE PASSED: 7 checks` with `upstream_call_delta=0` on every deny. Three genuine setup defects were found and fixed in the process — missing
+  `wheel` build dependency, no npm lockfile, and a brittle loopback test. Full transcript and
+  defect list: `docs/VERIFICATION.md` §10.
 
 ### AD-02 — real upstream discovered through the gateway via `tools/list` — **PASS**
 

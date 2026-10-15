@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed — found by running `make setup` on a clean machine (2026-10-15)
+
+- `make setup` failed with `error: invalid command 'bdist_wheel'` on any host without
+  `wheel` in system site-packages. The project installs itself with `--no-build-isolation`,
+  so `wheel` is now a declared dev dependency and a `build-system.requires` entry.
+- Added `apps/dashboard/package-lock.json` (lockfileVersion 3, 32 resolved entries). Without
+  it `npm ci` could never succeed, and its failure took the whole of `make setup` down —
+  backend included. The dashboard step now falls back to `npm install`, then to the offline
+  store, and finally warns and continues rather than aborting: the gateway, the API and the
+  entire security argument are Python and do not need Node.
+- `make setup` now asks `uv` for a Python `>=3.12` interpreter instead of inheriting the
+  host's `python3`, which produced a confusing failure several steps later on a host whose
+  default was 3.10.
+- `make e2e` installs Playwright on demand instead of assuming the host provides it, and
+  explains what still works if the registry is unreachable.
+- The loopback-binding assertion no longer resolves the machine's own hostname to find an
+  address to probe — it reads the bind address from `/proc/net/tcp`. The old form skipped
+  itself on one host and raised `gaierror` on another; neither outcome said anything about
+  the server. A companion test binds `0.0.0.0` and proves the assertion can fail.
+  This removes the suite's only skipped test: **562 passed, 0 skipped**.
+- The AD-14 latency figure is now written to `var/sse-latency.json` as a measurement rather
+  than only asserted against its target.
+- `make verify`'s `assets` gate now also requires every evidence document the project cites
+  to exist and be non-trivial, so a ledger can no longer reference a missing file.
+
 ## [0.1.0] — 2026-10-14
 
 First working release. Local demonstration only; see the deployment warning in `README.md`.

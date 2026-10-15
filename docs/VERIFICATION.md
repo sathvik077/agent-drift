@@ -7,8 +7,9 @@ there are no inferred passes in this document.
 
 **If you only read one line:** `make verify` exits **1** in this environment, because the
 `docker` gate is **BLOCKED** (no container registry access). All 15 other gates PASS and the
-test suite is **560 passed, 0 failed, 1 skipped**. The machine-readable form of this run is
-`var/verify-report.json`.
+test suite is **562 passed, 0 failed, 0 skipped**. The machine-readable form of this run is
+`var/verify-report.json`. Setup and the core security proof were additionally run on a
+**second, clean machine** with live package registries — see §11.
 
 ---
 
@@ -16,7 +17,7 @@ test suite is **560 passed, 0 failed, 1 skipped**. The machine-readable form of 
 
 | | |
 |---|---|
-| Date of the recorded run | **2026-10-14** |
+| Date of the recorded run | **2026-10-14**; clean-machine run (§10) **2026-10-15** |
 | Operating system | `Linux-6.18.44-fc-v114-x86_64-with-glibc2.39` (x86-64 container) |
 | Python | **3.13.16** (`.venv/bin/python`, created by `make setup`) |
 | Node | **v22.22.0** |
@@ -69,7 +70,7 @@ evidence with per-gate commands, exit codes, durations and output tails:
 | `bundle-size` | **PASS** | 0 | 0.0 | `bytes=226046` (under the 1 MB ceiling) |
 | `test-unit` | **PASS** | 0 | 2.2 | `passed=106` |
 | `test-security` | **PASS** | 0 | 5.0 | `passed=282` |
-| `test-integration` | **PASS** | 0 | 172.6 | `passed=142 skipped=1` |
+| `test-integration` | **PASS** | 0 | 184.6 | `passed=144` |
 | `test-e2e` | **PASS** | 0 | 41.3 | `passed=30` |
 | `smoke` | **PASS** | 0 | 2.9 | `SMOKE PASSED: 7 checks` |
 | `eval` | **PASS** | 0 | 1.1 | wrote `evals/RESULTS.json` and `RESULTS.md` |
@@ -79,7 +80,7 @@ evidence with per-gate commands, exit codes, durations and output tails:
 | `docker` | **BLOCKED** | — | 0.0 | container registry unreachable; images never built here |
 
 ```
-test totals: 560 passed, 0 failed
+test totals: 562 passed, 0 failed
 
 NOT READY — 1 gate(s) could not run here:
   - docker: The container registry is unreachable from this environment, so base
@@ -93,17 +94,20 @@ mandatory gate fails *or* when one is blocked, and it prints `NOT READY` rather 
 reporting a pass it cannot support. The exit code 1 above is the script correctly refusing
 to certify a gate it could not execute.
 
-### The one skipped test
+### Skipped tests: none
 
-```
-SKIPPED [1] tests/integration/test_sse_live.py:141:
-  this host resolves its own name to loopback; nothing to prove
-```
+An earlier revision skipped one — the assertion that the control plane does **not** listen
+on a non-loopback interface. It resolved the machine's own hostname to find an address to
+probe, which returns loopback in some containers (so the test skipped itself rather than
+pass vacuously) and raises `gaierror` in others (so it failed for a reason that had nothing
+to do with the server). Both behaviours were observed, on two different machines.
 
-That test asserts the API does **not** bind to a non-loopback interface. On this host the
-machine's own hostname resolves to `127.0.0.1`, so there is no second interface to attempt a
-connection on and the test would pass vacuously. It skips with that reason instead of
-claiming a result it did not establish. It runs normally on a host with a routable address.
+It now reads the bind address out of `/proc/net/tcp` rather than probing the network, which
+is both the thing the test actually cares about and compatible with the suite's own no-egress
+guard — the guard correctly blocked the probe, which is how the second problem surfaced. A
+companion test, `test_loopback_assertion_would_catch_a_wide_bind`, binds `0.0.0.0` and
+asserts the check trips on it, so the assertion is proven *able* to fail rather than merely
+observed to pass.
 
 ---
 
@@ -163,9 +167,9 @@ Counts are from the recorded `make verify` run.
 |---|---|---|
 | Unit | `pytest tests/unit -q` | **106 passed** |
 | Security regressions | `pytest tests/security -q` | **282 passed** |
-| Integration (real MCP subprocesses) | `pytest tests/integration -q` | **142 passed, 1 skipped** |
+| Integration (real MCP subprocesses) | `pytest tests/integration -q` | **144 passed** |
 | End-to-end (real Chromium) | `pytest tests/e2e -q` | **30 passed** |
-| **Total** | `make test-all` | **560 passed, 0 failed, 1 skipped** |
+| **Total** | `make test-all` | **562 passed, 0 failed, 0 skipped** |
 
 What the integration suite actually does: it spawns the upstream MCP server as a **real
 subprocess** and talks to it over **real stdio** with the real SDK client. There is no mock
@@ -254,15 +258,15 @@ failed-paint capture fails the suite.
 Measured, not asserted blind:
 
 ```
-[AD-14] decision reached the SSE stream in 671.8 ms (local target 2000 ms)
+[AD-14] decision reached the SSE stream in 635.2 ms (local target 2000 ms)
 ```
 
 Recorded to `var/sse-latency.json`:
 
 ```json
 {
-  "measured_at": "2026-10-14T20:15:54Z",
-  "latency_s": 0.6718,
+  "measured_at": "2026-10-15T03:17:59Z",
+  "latency_s": 0.6352,
   "target_s": 2.0,
   "within_target": true
 }
@@ -312,7 +316,92 @@ quietly rounded up.
 
 ---
 
-## 10. Reproducing this ledger
+## 10. Clean-machine setup run (a second, independent host)
+
+Everything above was observed on the machine the project was built on, which proves the code
+works but not that the *setup path* does. So `make setup` was run from a fresh copy on a
+**different host** — a Linux x86-64 VM with a live PyPI and npm registry and no trace of the
+build environment: no offline wheelhouse, no preinstalled Node toolchain, and a default
+`python3` of **3.10.12**, below the project's floor.
+
+**Observed (2026-10-15):**
+
+```
+$ python3 --version
+Python 3.10.12
+
+$ make setup
+Using CPython 3.13.15
+Creating virtual environment at: .venv
+==> using Python 3.13.15
+==> installing pinned Python dependencies
+==> installing dashboard dependencies
+added 6 packages in 6s
+registered demo-repo-review       revision=1 hash=4e5e7c4db5907311 tools=2
+registered demo-docs-edit         revision=1 hash=9284527cefe6cb75 tools=2
+registered demo-cleanup           revision=1 hash=97d06203fc63f6d6 tools=1
+registered demo-report-upload     revision=1 hash=4d5535c67712e98c tools=2
+registered demo-expired           revision=1 hash=da962f8f1bbeef27 tools=2
+setup complete.
+  API will serve on       http://127.0.0.1:8001
+  dashboard dev server on http://127.0.0.1:5173
+
+$ make smoke
+SMOKE PASSED: 7 checks
+allowed=1 blocked=3 upstream_denied_calls=0
+
+$ make build-dashboard
+dist/app.js  220.7kb   ⚡ Done in 61ms
+
+$ pytest tests/unit tests/security -q
+388 passed
+
+$ pytest tests/integration -q          # run per-file; the host caps a command at 180 s
+test_api_smoke          28 passed
+test_deny_before_execute 18 passed
+test_mcp_roundtrip      11 passed
+test_schema_gate        14 passed
+test_sdk                16 passed
+test_release_vectors    22 passed
+test_scenarios          23 passed
+test_timeout_budget      3 passed
+test_sse_live            9 passed
+```
+
+Dependencies there resolved from **real PyPI and real npm**, not from the build machine's
+caches. `repo.read_file` reached the upstream and the three prohibited calls did not, with
+`upstream_call_delta=0` read from the fixture's own counters — the central claim reproduced
+on a host that had never run this code before.
+
+### Three real defects this run found
+
+None of these were visible on the build machine. They are listed because a setup path that
+only works where it was written is not a setup path.
+
+1. **`make setup` failed outright: `error: invalid command 'bdist_wheel'`.** The project is
+   installed with `--no-build-isolation`, so `wheel` must already be in the venv. On the
+   build machine it was inherited from system site-packages and nobody noticed. Fixed by
+   adding `wheel==0.42.0` to the dev dependencies and `wheel` to `build-system.requires`.
+2. **`npm ci` could never have worked: there was no lockfile.** `npm ci` requires
+   `package-lock.json`, and the build machine had no registry access to generate one, so the
+   step silently fell through to an offline fallback that failed too — taking all of
+   `make setup` down with it, backend included. A real `package-lock.json` (lockfileVersion
+   3, 32 resolved entries) was generated on the clean machine and is now committed, which is
+   also what the build contract asks for. The dashboard dependency step no longer aborts
+   setup, and `make e2e` installs Playwright on demand rather than assuming the host has it.
+3. **The loopback-binding test failed for an environmental reason** (`gaierror` on resolving
+   the host's own name). Reworked to read the bind address from the kernel; see §2.
+
+### What this run does *not* establish
+
+The clean machine is Linux x86-64, like the build machine. **Windows and macOS remain
+untested**, and the `Makefile` is POSIX — on Windows it needs WSL or Git Bash. Nothing here
+says anything about path canonicalization behaviour on a case-insensitive filesystem, which
+is the part of this codebase most likely to differ.
+
+---
+
+## 11. Reproducing this ledger
 
 ```bash
 make setup          # creates .venv from the offline wheelhouse, generates .env, seeds data

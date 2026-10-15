@@ -72,8 +72,12 @@ the gateway's own report. That is the difference between a claim and evidence.
 
 ## 30-second quickstart
 
-**Prerequisites:** Python 3.12+, Node 22+, `uv`, `npm`, `make`. WSL2 on Windows. **No model
+**Prerequisites:** Node 22+, `uv`, `npm`, `make`. WSL2 or Git Bash on Windows. **No model
 API key is needed** — the demo, every test and the whole benchmark run offline.
+
+Python 3.12+ is required but you do not have to install it yourself: `make setup` asks `uv`
+for a suitable interpreter and fetches a standalone one if the host's `python3` is older. It
+was verified this way on a machine whose default was 3.10.
 
 ```bash
 git clone https://github.com/your-org/agent-drift && cd agent-drift
@@ -355,9 +359,10 @@ test counts and the things that are **not** verified — with
 | | |
 |---|---|
 | `make verify` | 15 of 16 gates **PASS**, 1 **BLOCKED** → exits **1** |
-| Tests | **560 passed, 0 failed, 1 skipped** (106 unit · 282 security · 142 integration · 30 e2e) |
+| Tests | **562 passed, 0 failed, 0 skipped** (106 unit · 282 security · 144 integration · 30 e2e) |
 | Deny-before-execute | proven against the upstream fixture's **own** side-effect counters, never the gateway's self-report |
-| Live update latency | measured **672 ms**, local target 2000 ms |
+| Clean-machine setup | `make setup` → `make smoke` run on a **second host** with live PyPI/npm and none of the build environment; it found and fixed 3 real setup defects ([§10](docs/VERIFICATION.md)) |
+| Live update latency | measured **635 ms**, local target 2000 ms |
 | Screenshots | all captured from the running app; the pipeline writes nothing on failure |
 | **Not verified** | **Docker images were never built** (container registry unreachable here) — the single reason the verdict is NOT READY. MCP Inspector not run (npm blocked). CI has never executed. Linux x86-64 only. |
 

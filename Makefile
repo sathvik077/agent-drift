@@ -35,7 +35,11 @@ export NODE_PATH := $(NODE_MODULES):$(NODE_STORE)
 PYTHON_MIN := 3.12
 
 RUN_DEPS := mcp==2.2.0 pydantic==2.13.5 starlette==1.6.0 sse-starlette==3.4.11 uvicorn==0.53.0 python-multipart==0.0.32
-DEV_DEPS := pytest==9.1.1 httpx==0.28.1 ruff==0.16.8 mypy==2.3.1 setuptools==68.1.2
+# `wheel` is required because the project is installed with --no-build-isolation;
+# without it in the venv, setuptools fails with "invalid command 'bdist_wheel'".
+DEV_DEPS := pytest==9.1.1 httpx==0.28.1 ruff==0.16.8 mypy==2.3.1 setuptools==68.1.2 wheel==0.42.0
+# Only the browser suite needs this, so `make e2e` installs it on demand.
+E2E_DEPS := playwright==1.56.0
 
 .PHONY: help
 help: ## Show the available targets
@@ -58,7 +62,7 @@ setup: ## Create the venv, install pinned deps, generate .env, init the database
 	  # inheriting whatever `python3` happens to be, which on many systems is older and
 	  # produces a confusing failure several steps later. uv downloads a standalone
 	  # interpreter if the host has none; if it cannot, we say so plainly and stop.
-	  if ! uv venv .venv --python $(PYTHON_MIN) --system-site-packages; then
+	  if ! uv venv .venv --python ">=$(PYTHON_MIN)" --system-site-packages; then
 	    echo
 	    echo "ERROR: could not create a Python $(PYTHON_MIN) virtual environment."
 	    echo "       Agent Drift requires Python >= $(PYTHON_MIN) (found: $$(python3 --version 2>&1))."
@@ -75,12 +79,28 @@ setup: ## Create the venv, install pinned deps, generate .env, init the database
 	fi
 	VIRTUAL_ENV=$(VENV) $(PIP) install -q -e . --no-deps --no-build-isolation
 	echo "==> installing dashboard dependencies"
+	# The dashboard is the only thing that needs Node. If it cannot be installed, say so
+	# and keep going: the gateway, the API, the test suites and `make smoke` -- the whole
+	# security argument -- are Python and work without it. Failing the entire setup here
+	# would leave a user with nothing when they could have had everything but the UI.
+	DASHBOARD_READY=yes
 	if ! (cd $(DASHBOARD) && npm ci --silent --no-audit --no-fund 2>/dev/null); then
-	  echo "    npm registry unavailable; linking pinned packages from the local store"
-	  $(PY) scripts/offline_bootstrap.py --node
+	  if ! (cd $(DASHBOARD) && npm install --silent --no-audit --no-fund 2>/dev/null); then
+	    echo "    npm registry unavailable; linking pinned packages from the local store"
+	    $(PY) scripts/offline_bootstrap.py --node || DASHBOARD_READY=no
+	  fi
 	fi
 	$(MAKE) --no-print-directory env
 	$(MAKE) --no-print-directory seed
+	if [ "$$DASHBOARD_READY" = "no" ]; then
+	  echo
+	  echo "WARNING: the dashboard's Node dependencies could not be installed (no registry"
+	  echo "         access and no local package store). Everything else is ready:"
+	  echo "           make smoke   # deny-before-execute, with real upstream counters"
+	  echo "           make test    # unit + security + integration"
+	  echo "           make api     # the control plane on 127.0.0.1:$(AD_API_PORT)"
+	  echo "         Re-run 'make setup' once npm is reachable to add the dashboard."
+	fi
 	echo
 	echo "setup complete."
 	echo "  API will serve on       http://127.0.0.1:$(AD_API_PORT)"
@@ -151,7 +171,24 @@ test-all: ## Run every suite including the browser end-to-end tests
 
 .PHONY: e2e
 e2e: build-dashboard ## Run the Playwright end-to-end suite against a live server
-	@$(PYTEST) tests/e2e -q
+	@set -euo pipefail
+	if ! $(PY) -c "import playwright" 2>/dev/null; then
+	  echo "==> installing Playwright (needed only by the browser suite)"
+	  if ! VIRTUAL_ENV=$(VENV) $(PIP) install -q $(E2E_DEPS) 2>/dev/null; then
+	    if [ -d "$(WHEELHOUSE)" ]; then
+	      VIRTUAL_ENV=$(VENV) $(PIP) install -q --no-index --find-links $(WHEELHOUSE) $(E2E_DEPS)
+	    else
+	      echo
+	      echo "ERROR: Playwright is not installed and the package registry is unreachable."
+	      echo "       The browser suite is the only thing that needs it. Everything else runs:"
+	      echo "         make test    # unit + security + integration (real MCP processes)"
+	      echo "         make smoke   # the deny-before-execute proof"
+	      exit 1
+	    fi
+	  fi
+	fi
+	$(PY) -m playwright install chromium >/dev/null 2>&1 || true
+	$(PYTEST) tests/e2e -q
 
 .PHONY: lint
 lint: ## Ruff for Python, tsc for the dashboard

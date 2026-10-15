@@ -8,6 +8,7 @@ local target, not as a claim about anything internet-scale.
 from __future__ import annotations
 
 import json
+import socket
 import threading
 import time
 from datetime import UTC, datetime
@@ -148,6 +149,32 @@ class TestSseLive:
         assert not any(frame.startswith("event: decision") for frame in frames), frames[:10]
 
 
+def _listening_bind_addresses(port: int) -> list[str]:
+    """IPv4 addresses the kernel reports as LISTEN for ``port``, via ``/proc/net/tcp``.
+
+    This reads the bind address out of the kernel rather than probing the network for
+    it. Probing was the original approach and was wrong twice over: resolving this
+    machine's own hostname raises ``gaierror`` in many containers, and reaching for a
+    routable address trips the suite's own no-egress guard, which is a feature. The
+    bind address is the thing the test actually cares about, so read that directly.
+    """
+    source = Path("/proc/net/tcp")
+    if not source.exists():  # not Linux
+        return []
+    addresses: list[str] = []
+    for line in source.read_text(encoding="utf-8").splitlines()[1:]:
+        fields = line.split()
+        if len(fields) < 4 or fields[3] != "0A":  # 0A = TCP_LISTEN
+            continue
+        local_hex, _, port_hex = fields[1].partition(":")
+        if int(port_hex, 16) != port:
+            continue
+        # /proc stores the address as little-endian hex.
+        octets = [int(local_hex[i : i + 2], 16) for i in range(0, 8, 2)]
+        addresses.append(".".join(str(o) for o in reversed(octets)))
+    return addresses
+
+
 class TestLiveHttpBehaviour:
     """A few properties that only a real server exercises."""
 
@@ -157,16 +184,28 @@ class TestLiveHttpBehaviour:
         assert body["mcp_protocol_revision"] == "2026-07-28"
 
     def test_api_is_bound_to_loopback_only(self, server) -> None:
-        """Defence in depth: the port must not answer on a non-loopback interface."""
-        import socket
+        """Defence in depth: the control plane must listen only on loopback."""
+        bound = _listening_bind_addresses(server.port)
+        if not bound:
+            pytest.skip("/proc/net/tcp is unavailable; cannot read the bind address here")
+        offending = [address for address in bound if not address.startswith("127.")]
+        assert not offending, (
+            f"the control plane is listening on non-loopback address(es) {offending}; "
+            f"all LISTEN entries for port {server.port}: {bound}"
+        )
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            probe.settimeout(1.5)
-            hostname_ip = socket.gethostbyname(socket.gethostname())
-            if hostname_ip.startswith("127."):
-                pytest.skip("this host resolves its own name to loopback; nothing to prove")
-            assert probe.connect_ex((hostname_ip, server.port)) != 0, (
-                "the control plane answered on a non-loopback address"
+    def test_loopback_assertion_would_catch_a_wide_bind(self) -> None:
+        """The check above must be able to fail. Bind 0.0.0.0 and prove it trips."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as wide:
+            wide.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            wide.bind(("0.0.0.0", 0))
+            wide.listen(1)
+            port = wide.getsockname()[1]
+            bound = _listening_bind_addresses(port)
+            if not bound:
+                pytest.skip("/proc/net/tcp is unavailable; cannot read the bind address here")
+            assert any(not address.startswith("127.") for address in bound), (
+                f"a 0.0.0.0 bind was not reported as non-loopback: {bound}"
             )
 
     def test_mutation_requires_the_token_over_real_http(self, server) -> None:
