@@ -181,7 +181,7 @@ returns the same labels and the metric definitions.
 
 Control plane on `127.0.0.1:8001`. Browsable reference at `/docs`, OpenAPI 3.1 at
 `/openapi.json`. Reads are open on loopback; **every mutation needs the bearer token** from
-`.env`.
+`.env`..
 
 ```bash
 source .env
